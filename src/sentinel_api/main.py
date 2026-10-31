@@ -126,16 +126,18 @@ async def n8n_pending_events(
 @app.post("/integrations/n8n/analyze")
 async def n8n_analyze_event(
     analysis_request: dict[str, Any],
+    request: Request,
     authorization: str = Header(default="", alias="Authorization"),
 ):
-    """Run optional AI advisory outside the GitHub webhook response path."""
+    """Analyze a pending delivery using its verified payload stored by Sentinel."""
     require_integration_token(authorization)
     delivery_id = analysis_request.get("delivery_id")
-    payload = analysis_request.get("payload")
     if not isinstance(delivery_id, str) or not delivery_id.strip():
         raise HTTPException(status_code=400, detail="delivery_id is required")
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+    event = request.app.state.ledger.get_pending(delivery_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Pending delivery not found")
+    payload = event["payload"]
 
     assessment = assess_pull_request(payload).to_dict()
     response: dict[str, Any] = {"delivery_id": delivery_id, "risk": assessment}
