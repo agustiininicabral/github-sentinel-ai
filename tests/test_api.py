@@ -90,6 +90,7 @@ async def test_webhook_rejects_non_object_json(monkeypatch, tmp_path):
             "X-Hub-Signature-256": signed(body, "test-secret")})
     assert response.status_code == 400
 
+
 @pytest.mark.asyncio
 async def test_n8n_integration_is_disabled_without_token(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "integration_token", "")
@@ -98,10 +99,11 @@ async def test_n8n_integration_is_disabled_without_token(monkeypatch, tmp_path):
         response = await client.get("/integrations/n8n/events")
     assert response.status_code == 503
 
+
 @pytest.mark.asyncio
-async def test_webhook_includes_optional_ai_advisory(monkeypatch, tmp_path):
+async def test_ai_advisory_runs_on_authenticated_n8n_endpoint(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
-    monkeypatch.setattr(main.settings, "integration_token", "")
+    monkeypatch.setattr(main.settings, "integration_token", "n8n-secret")
     monkeypatch.setattr(main.settings, "ai_enabled", True)
     monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "ai.db"))
 
@@ -115,13 +117,24 @@ async def test_webhook_includes_optional_ai_advisory(monkeypatch, tmp_path):
     headers = {"X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "ai-delivery",
                "X-Hub-Signature-256": signed(body, "test-secret")}
     async for client in request_app():
-        response = await client.post("/webhooks/github", content=body, headers=headers)
-    assert response.status_code == 200
-    assert response.json()["ai_summary"] == "Review the authentication change carefully."
+        webhook = await client.post("/webhooks/github", content=body, headers=headers)
+        unauthorized = await client.post("/integrations/n8n/analyze", json={
+            "delivery_id": "ai-delivery", "payload": json.loads(body)
+        })
+        analysis = await client.post("/integrations/n8n/analyze", json={
+            "delivery_id": "ai-delivery", "payload": json.loads(body)
+        }, headers={"Authorization": "Bearer n8n-secret"})
+    assert webhook.status_code == 200
+    assert "ai_summary" not in webhook.json()
+    assert unauthorized.status_code == 401
+    assert analysis.json()["risk"]["score"] == 25
+    assert analysis.json()["ai_summary"] == "Review the authentication change carefully."
+
 
 @pytest.mark.asyncio
-async def test_ai_provider_failure_does_not_drop_verified_webhook(monkeypatch, tmp_path):
+async def test_ai_provider_failure_does_not_block_webhook_or_analysis(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "integration_token", "n8n-secret")
     monkeypatch.setattr(main.settings, "ai_enabled", True)
     monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "ai-failure.db"))
 
@@ -133,8 +146,23 @@ async def test_ai_provider_failure_does_not_drop_verified_webhook(monkeypatch, t
     headers = {"X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "ai-failure",
                "X-Hub-Signature-256": signed(body, "test-secret")}
     async for client in request_app():
-        response = await client.post("/webhooks/github", content=body, headers=headers)
-        pending = await client.get("/integrations/n8n/events")
-    assert response.status_code == 200
-    assert response.json()["ai_summary_status"] == "unavailable"
-    assert pending.status_code == 503
+        webhook = await client.post("/webhooks/github", content=body, headers=headers)
+        analysis = await client.post("/integrations/n8n/analyze", json={
+            "delivery_id": "ai-failure", "payload": json.loads(body)
+        }, headers={"Authorization": "Bearer n8n-secret"})
+    assert webhook.status_code == 200
+    assert analysis.status_code == 200
+    assert analysis.json()["ai_summary_status"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_analyze_requires_delivery_and_payload(monkeypatch):
+    monkeypatch.setattr(main.settings, "integration_token", "n8n-secret")
+    async for client in request_app():
+        missing_id = await client.post("/integrations/n8n/analyze", json={"payload": {}},
+                                       headers={"Authorization": "Bearer n8n-secret"})
+        invalid_payload = await client.post("/integrations/n8n/analyze", json={
+            "delivery_id": "delivery-1", "payload": []
+        }, headers={"Authorization": "Bearer n8n-secret"})
+    assert missing_id.status_code == 400
+    assert invalid_payload.status_code == 400
