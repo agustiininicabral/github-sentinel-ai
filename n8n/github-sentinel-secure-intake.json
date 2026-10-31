@@ -16,10 +16,7 @@
       "name": "Poll Sentinel",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [
-        240,
-        300
-      ]
+      "position": [240, 300]
     },
     {
       "parameters": {
@@ -28,12 +25,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendQuery": true,
         "queryParameters": {
-          "parameters": [
-            {
-              "name": "limit",
-              "value": "25"
-            }
-          ]
+          "parameters": [{"name": "limit", "value": "25"}]
         },
         "options": {}
       },
@@ -41,10 +33,7 @@
       "name": "Fetch Pending Events",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        460,
-        300
-      ],
+      "position": [460, 300],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
@@ -53,31 +42,45 @@
       }
     },
     {
-      "parameters": {
-        "fieldToSplitOut": "events",
-        "options": {}
-      },
+      "parameters": {"fieldToSplitOut": "events", "options": {}},
       "id": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a003",
       "name": "Split Events",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [
-        680,
-        300
-      ]
+      "position": [680, 300]
     },
     {
       "parameters": {
-        "jsCode": "return items.map(({ json }) => {\n  const event = json;\n  const pr = event.payload?.pull_request ?? {};\n  return { json: {\n    delivery_id: event.delivery_id,\n    event: event.event,\n    action: event.action,\n    received_at: event.received_at,\n    repository: event.payload?.repository?.full_name ?? null,\n    pull_request: {\n      number: pr.number ?? null,\n      title: pr.title ?? null,\n      state: pr.state ?? null,\n      changed_files: pr.changed_files ?? null,\n      additions: pr.additions ?? null,\n      deletions: pr.deletions ?? null,\n      html_url: pr.html_url ?? null\n    }\n  }};\n});"
+        "jsCode": "return items.map(({ json }) => {\n  const event = json;\n  const pr = event.payload?.pull_request ?? {};\n  return { json: {\n    delivery_id: event.delivery_id,\n    event: event.event,\n    action: event.action,\n    received_at: event.received_at,\n    payload: event.payload,\n    repository: event.payload?.repository?.full_name ?? null,\n    pull_request: {\n      number: pr.number ?? null,\n      title: pr.title ?? null,\n      state: pr.state ?? null,\n      changed_files: pr.changed_files ?? null,\n      additions: pr.additions ?? null,\n      deletions: pr.deletions ?? null,\n      html_url: pr.html_url ?? null\n    }\n  }};\n});"
       },
       "id": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a004",
       "name": "Normalize Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        900,
-        300
-      ]
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/integrations/n8n/analyze",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { delivery_id: $json.delivery_id, payload: $json.payload } }}",
+        "options": {}
+      },
+      "id": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a006",
+      "name": "Analyze Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Sentinel API Bearer"
+        }
+      }
     },
     {
       "parameters": {
@@ -91,10 +94,7 @@
       "name": "Acknowledge Processed Event",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        1120,
-        300
-      ],
+      "position": [1340, 300],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
@@ -104,58 +104,15 @@
     }
   ],
   "connections": {
-    "Poll Sentinel": {
-      "main": [
-        [
-          {
-            "node": "Fetch Pending Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Pending Events": {
-      "main": [
-        [
-          {
-            "node": "Split Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Split Events": {
-      "main": [
-        [
-          {
-            "node": "Normalize Event",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize Event": {
-      "main": [
-        [
-          {
-            "node": "Acknowledge Processed Event",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Poll Sentinel": {"main": [[{"node": "Fetch Pending Events", "type": "main", "index": 0}]]},
+    "Fetch Pending Events": {"main": [[{"node": "Split Events", "type": "main", "index": 0}]]},
+    "Split Events": {"main": [[{"node": "Normalize Event", "type": "main", "index": 0}]]},
+    "Normalize Event": {"main": [[{"node": "Analyze Event", "type": "main", "index": 0}]]},
+    "Analyze Event": {"main": [[{"node": "Acknowledge Processed Event", "type": "main", "index": 0}]]}
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
+  "settings": {"executionOrder": "v1"},
   "versionId": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a099",
-  "meta": {
-    "templateCredsSetupCompleted": false
-  },
+  "meta": {"templateCredsSetupCompleted": false},
   "tags": []
 }
