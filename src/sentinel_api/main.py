@@ -50,9 +50,14 @@ async def github_webhook(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Content-Length header") from None
 
-    raw_body = await request.body()
-    if len(raw_body) > settings.max_webhook_bytes:
-        raise HTTPException(status_code=413, detail="Webhook payload too large")
+    # Stream with a hard cap so chunked requests cannot bypass Content-Length checks.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > settings.max_webhook_bytes:
+            raise HTTPException(status_code=413, detail="Webhook payload too large")
+        body.extend(chunk)
+    raw_body = bytes(body)
+
     if not verify_github_signature(settings.github_webhook_secret, raw_body, x_hub_signature_256):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     if not x_github_delivery or not x_github_event:
