@@ -2,17 +2,18 @@
 
 Enterprise-oriented, local-first GitHub DevOps, QA and code-intelligence automation. Sentinel receives GitHub webhooks, verifies their HMAC signature, deduplicates deliveries, computes deterministic pull-request risk signals, and exposes an authenticated durable outbox for n8n.
 
-> Implemented milestone: secure webhook intake, SQLite outbox, n8n polling/acknowledgement workflow and an optional OpenAI-compatible AI adapter. PostgreSQL, automated PR diff review and GitHub write actions remain future work.
+> Implemented milestone: secure webhook intake, SQLite outbox, authenticated n8n polling/analysis/acknowledgement, deterministic PR risk scoring and an optional OpenAI-compatible AI advisory adapter. PostgreSQL, automated PR diff review and GitHub write actions remain future work.
 
 ## Features
 - FastAPI service with health and readiness endpoints.
 - GitHub webhook signature verification against the exact raw request body.
 - Bounded streaming request-body handling and delivery-id idempotency ledger.
 - Durable SQLite outbox for verified webhook deliveries, with forward schema migration.
-- Authenticated n8n polling and acknowledgement endpoints.
-- Importable n8n workflow for scheduled polling and event normalization.
+- Authenticated n8n polling, analysis and acknowledgement endpoints.
+- Importable n8n workflow for scheduled polling, event normalization, analysis and acknowledgement.
 - Deterministic PR risk scoring with explainable factors, using GitHub's actual nested webhook schema.
 - Optional OpenAI-compatible AI advisory adapter; local-compatible endpoints are supported and deterministic mode works without AI credentials.
+- AI execution is kept out of the GitHub webhook response path, so a slow local or external model does not delay GitHub's acknowledgement.
 - GitHub Actions CI with Ruff linting and pytest coverage gate (85%).
 
 ## Quick start (Windows PowerShell)
@@ -36,10 +37,10 @@ Configure a repository webhook with:
 - Secret: same value as `GITHUB_WEBHOOK_SECRET`
 - Events: Pull requests (start with this only)
 
-The endpoint verifies `X-Hub-Signature-256` over the original raw bytes and persists verified events to the outbox. Do not expose the service without HTTPS, secret management, rate limiting and an operational deployment plan.
+The endpoint verifies `X-Hub-Signature-256` over the original raw bytes and persists verified events to the outbox. It returns without waiting for the AI provider. Do not expose the service without HTTPS, secret management, rate limiting and an operational deployment plan.
 
 ## n8n
-Import [n8n/github-sentinel-secure-intake.json](n8n/github-sentinel-secure-intake.json) and follow [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md). n8n uses a separate bearer token to poll pending events and acknowledge each delivery. The workflow export contains a credential placeholder; configure the HTTP Header Auth credential after import.
+Import [n8n/github-sentinel-secure-intake.json](n8n/github-sentinel-secure-intake.json) and follow [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md). n8n uses a separate bearer token to poll pending events, request deterministic/AI analysis, and acknowledge each delivery. The workflow export contains a credential placeholder; configure the HTTP Header Auth credential after import.
 
 ## Tests
 ```powershell
@@ -51,8 +52,9 @@ ruff check src tests
 ```text
 GitHub webhook -> bounded FastAPI ingress -> HMAC verification -> SQLite outbox
                                                                 -> n8n polling API
-                                                                -> PR risk engine
-                                                                -> optional AI advisory adapter
+                                                                -> deterministic PR risk
+                                                                -> optional AI advisory
+                                                                -> acknowledgement
 ```
 
 ## Security boundaries
@@ -60,7 +62,7 @@ GitHub webhook -> bounded FastAPI ingress -> HMAC verification -> SQLite outbox
 - AI output is advisory and must never be treated as authorization.
 - Webhook signature is checked before JSON parsing or persistence.
 - SQLite is intended for local/single-instance use; use PostgreSQL before multi-instance production.
-- n8n receives only events already verified by Sentinel. Never parse and re-serialize the signed GitHub body before verification.
+- n8n receives only events already verified and persisted by Sentinel. Never parse and re-serialize the signed GitHub body before verification.
 - Never commit `.env`, tokens, webhook secrets, or model credentials.
 
 ## Roadmap
