@@ -14,7 +14,6 @@ class DeliveryLedger:
         self.database_path = database_path
         self._keeper: sqlite3.Connection | None = None
         if database_path == ":memory:":
-            # Keep a shared in-memory database alive while per-operation connections close.
             self.database_path = f"file:sentinel-{uuid.uuid4().hex}?mode=memory&cache=shared"
             self._keeper = sqlite3.connect(self.database_path, uri=True, check_same_thread=False)
         else:
@@ -93,6 +92,24 @@ class DeliveryLedger:
             "payload": json.loads(row["payload_json"]),
             "received_at": row["received_at"],
         } for row in rows]
+
+    def get_pending(self, delivery_id: str) -> dict[str, Any] | None:
+        """Return one pending delivery by ID, including its trusted stored payload."""
+        with self._connection() as connection:
+            row = connection.execute(
+                """SELECT delivery_id, event_name, action, payload_json, received_at
+                   FROM deliveries WHERE delivery_id = ? AND status = 'pending'""",
+                (delivery_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "delivery_id": row["delivery_id"],
+            "event": row["event_name"],
+            "action": row["action"],
+            "payload": json.loads(row["payload_json"]),
+            "received_at": row["received_at"],
+        }
 
     def acknowledge(self, delivery_id: str) -> bool:
         with self._connection() as connection:
