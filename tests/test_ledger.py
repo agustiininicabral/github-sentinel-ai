@@ -36,3 +36,24 @@ def test_ledger_migrates_previous_delivery_table(tmp_path):
     assert len(pending) == 1
     assert pending[0]["delivery_id"] == "legacy-1"
     assert pending[0]["payload"] == {}
+
+
+def test_in_memory_ledger_survives_per_operation_connections():
+    ledger = DeliveryLedger(":memory:")
+    try:
+        payload = {"action": "opened"}
+        assert ledger.register("memory-1", "pull_request", "opened", payload)
+        assert ledger.pending()[0]["payload"] == payload
+        assert ledger.ping()
+        assert ledger.acknowledge("memory-1")
+        assert ledger.pending() == []
+    finally:
+        ledger.close()
+
+
+def test_pending_limit_is_clamped(tmp_path):
+    ledger = DeliveryLedger(str(tmp_path / "limits.db"))
+    for index in range(3):
+        assert ledger.register(f"delivery-{index}", "ping", None, {})
+    assert len(ledger.pending(0)) == 1
+    assert len(ledger.pending(500)) == 3
