@@ -1,8 +1,9 @@
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 
 from .config import get_settings
 from .ledger import DeliveryLedger
@@ -20,7 +21,15 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+
+
+def require_integration_token(authorization: str) -> None:
+    if not settings.integration_token:
+        raise HTTPException(status_code=503, detail="n8n integration is not configured")
+    expected = f"Bearer {settings.integration_token}"
+    if not hmac.compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="Invalid integration credentials")
 
 
 @app.get("/health")
@@ -50,7 +59,6 @@ async def github_webhook(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Content-Length header") from None
 
-    # Stream with a hard cap so chunked requests cannot bypass Content-Length checks.
     body = bytearray()
     async for chunk in request.stream():
         if len(body) + len(chunk) > settings.max_webhook_bytes:
@@ -70,12 +78,35 @@ async def github_webhook(
         raise HTTPException(status_code=400, detail="Webhook payload must be a JSON object")
 
     action = payload.get("action")
-    is_new = request.app.state.ledger.register(x_github_delivery, x_github_event, action)
+    is_new = request.app.state.ledger.register(x_github_delivery, x_github_event, action, payload)
     if not is_new:
         return {"status": "duplicate", "delivery_id": x_github_delivery}
 
     result = {"status": "accepted", "delivery_id": x_github_delivery, "event": x_github_event, "action": action}
     if x_github_event == "pull_request" and isinstance(payload.get("pull_request"), dict):
         result["risk"] = assess_pull_request(payload).to_dict()
-    logger.info("github_delivery_received event=%s action=%s delivery=%s", x_github_event, action, x_github_delivery)
+    logger.info("github_delivery_enqueued event=%s action=%s delivery=%s", x_github_event, action, x_github_delivery)
     return result
+
+
+@app.get("/integrations/n8n/events")
+async def n8n_pending_events(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    authorization: str = Header(default="", alias="Authorization"),
+):
+    require_integration_token(authorization)
+    events = request.app.state.ledger.pending(limit)
+    return {"events": events, "count": len(events)}
+
+
+@app.post("/integrations/n8n/events/{delivery_id}/ack")
+async def n8n_acknowledge_event(
+    delivery_id: str,
+    request: Request,
+    authorization: str = Header(default="", alias="Authorization"),
+):
+    require_integration_token(authorization)
+    if not request.app.state.ledger.acknowledge(delivery_id):
+        raise HTTPException(status_code=404, detail="Pending delivery not found")
+    return {"status": "processed", "delivery_id": delivery_id}
