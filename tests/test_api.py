@@ -118,3 +118,23 @@ async def test_webhook_includes_optional_ai_advisory(monkeypatch, tmp_path):
         response = await client.post("/webhooks/github", content=body, headers=headers)
     assert response.status_code == 200
     assert response.json()["ai_summary"] == "Review the authentication change carefully."
+
+@pytest.mark.asyncio
+async def test_ai_provider_failure_does_not_drop_verified_webhook(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "ai_enabled", True)
+    monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "ai-failure.db"))
+
+    async def failing_summary(settings, assessment, title):
+        raise RuntimeError("local model is unavailable")
+
+    monkeypatch.setattr(main, "summarize_risk", failing_summary)
+    body = json.dumps({"action": "opened", "pull_request": {"title": "Auth update"}}).encode()
+    headers = {"X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "ai-failure",
+               "X-Hub-Signature-256": signed(body, "test-secret")}
+    async for client in request_app():
+        response = await client.post("/webhooks/github", content=body, headers=headers)
+        pending = await client.get("/integrations/n8n/events")
+    assert response.status_code == 200
+    assert response.json()["ai_summary_status"] == "unavailable"
+    assert pending.status_code == 503
