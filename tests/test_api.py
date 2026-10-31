@@ -12,13 +12,7 @@ def signed(body: bytes, secret: str) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
 async def request_app():
-    """Yield an AsyncClient with the FastAPI lifespan initialized."""
     async with main.app.router.lifespan_context(main.app):
         transport = httpx.ASGITransport(app=main.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -34,8 +28,9 @@ async def test_health_and_ready(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_webhook_signature_risk_and_deduplication(monkeypatch, tmp_path):
+async def test_webhook_signature_risk_deduplication_and_outbox(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "integration_token", "n8n-secret")
     monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "api.db"))
     body = json.dumps({"action": "opened", "pull_request": {
         "title": "Auth update", "labels": [], "changed_files": 25
@@ -45,10 +40,20 @@ async def test_webhook_signature_risk_and_deduplication(monkeypatch, tmp_path):
     async for client in request_app():
         first = await client.post("/webhooks/github", content=body, headers=headers)
         second = await client.post("/webhooks/github", content=body, headers=headers)
+        unauthorized = await client.get("/integrations/n8n/events")
+        pending = await client.get("/integrations/n8n/events", headers={"Authorization": "Bearer n8n-secret"})
+        ack = await client.post("/integrations/n8n/events/delivery-42/ack",
+                                headers={"Authorization": "Bearer n8n-secret"})
+        empty = await client.get("/integrations/n8n/events", headers={"Authorization": "Bearer n8n-secret"})
     assert first.status_code == 200
     assert first.json()["risk"]["level"] == "medium"
     assert first.json()["risk"]["score"] == 45
     assert second.json()["status"] == "duplicate"
+    assert unauthorized.status_code == 401
+    assert pending.json()["count"] == 1
+    assert pending.json()["events"][0]["payload"]["action"] == "opened"
+    assert ack.json()["status"] == "processed"
+    assert empty.json()["count"] == 0
 
 
 @pytest.mark.asyncio
