@@ -1,0 +1,30 @@
+import json
+from pathlib import Path
+
+
+def test_n8n_workflow_export_is_valid_and_connected():
+    path = Path(__file__).parents[1] / "n8n" / "github-sentinel-secure-intake.json"
+    workflow = json.loads(path.read_text(encoding="utf-8"))
+    names = {node["name"] for node in workflow["nodes"]}
+    assert names == {
+        "Poll Sentinel",
+        "Fetch Pending Events",
+        "Split Events",
+        "Normalize Event",
+        "Acknowledge Processed Event",
+    }
+    assert set(workflow["connections"]) == names - {"Acknowledge Processed Event"}
+    code = next(node for node in workflow["nodes"] if node["name"] == "Normalize Event")
+    assert "\\n" not in code["parameters"]["jsCode"]
+    assert "delivery_id" in code["parameters"]["jsCode"]
+    assert workflow["active"] is False
+
+
+def test_n8n_workflow_does_not_embed_an_integration_secret():
+    path = Path(__file__).parents[1] / "n8n" / "github-sentinel-secure-intake.json"
+    workflow = json.loads(path.read_text(encoding="utf-8"))
+    for node in workflow["nodes"]:
+        if "credentials" in node:
+            credential = node["credentials"]["httpHeaderAuth"]
+            assert credential["name"] == "Sentinel API Bearer"
+            assert credential["id"] == "REPLACE_WITH_CREDENTIAL_ID"
