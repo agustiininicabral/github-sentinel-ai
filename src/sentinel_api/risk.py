@@ -19,9 +19,10 @@ def assess_pull_request(payload: dict[str, Any]) -> RiskAssessment:
     pr = payload.get("pull_request") or {}
     title = str(pr.get("title") or "").lower()
     body = str(pr.get("body") or "").lower()
-    changed_files = payload.get("changed_files")
-    additions = payload.get("additions")
-    deletions = payload.get("deletions")
+    # GitHub's pull_request webhook nests these counters inside pull_request.
+    changed_files = pr.get("changed_files", payload.get("changed_files"))
+    additions = pr.get("additions", payload.get("additions"))
+    deletions = pr.get("deletions", payload.get("deletions"))
     raw_labels = pr.get("labels", [])
     labels = {str(x.get("name", "")).lower() for x in raw_labels if isinstance(x, dict)} if isinstance(raw_labels, list) else set()
 
