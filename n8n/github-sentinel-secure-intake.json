@@ -67,7 +67,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { delivery_id: $json.delivery_id, payload: $json.payload } }}",
+        "jsonBody": "={{ { delivery_id: $json.delivery_id } }}",
         "options": {}
       },
       "id": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a006",
