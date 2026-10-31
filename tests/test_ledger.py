@@ -1,3 +1,5 @@
+import sqlite3
+
 from sentinel_api.ledger import DeliveryLedger
 
 
@@ -12,3 +14,25 @@ def test_delivery_is_processed_once_and_acknowledged(tmp_path):
     assert ledger.acknowledge("delivery-1")
     assert not ledger.acknowledge("delivery-1")
     assert ledger.pending() == []
+
+
+def test_ledger_migrates_previous_delivery_table(tmp_path):
+    database = tmp_path / "legacy.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute("""
+            CREATE TABLE deliveries (
+                delivery_id TEXT PRIMARY KEY,
+                event_name TEXT NOT NULL,
+                action TEXT,
+                received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        connection.execute(
+            "INSERT INTO deliveries(delivery_id, event_name, action) VALUES (?, ?, ?)",
+            ("legacy-1", "pull_request", "opened"),
+        )
+    ledger = DeliveryLedger(str(database))
+    pending = ledger.pending()
+    assert len(pending) == 1
+    assert pending[0]["delivery_id"] == "legacy-1"
+    assert pending[0]["payload"] == {}
