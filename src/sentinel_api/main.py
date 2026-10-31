@@ -3,8 +3,10 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 
+from .ai import summarize_risk
 from .config import get_settings
 from .ledger import DeliveryLedger
 from .risk import assess_pull_request
@@ -84,7 +86,18 @@ async def github_webhook(
 
     result = {"status": "accepted", "delivery_id": x_github_delivery, "event": x_github_event, "action": action}
     if x_github_event == "pull_request" and isinstance(payload.get("pull_request"), dict):
-        result["risk"] = assess_pull_request(payload).to_dict()
+        assessment = assess_pull_request(payload).to_dict()
+        result["risk"] = assessment
+        if settings.ai_enabled:
+            try:
+                summary = await summarize_risk(
+                    settings, assessment, str(payload["pull_request"].get("title") or "")
+                )
+                if summary:
+                    result["ai_summary"] = summary
+            except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+                logger.exception("ai_advisory_failed delivery=%s", x_github_delivery)
+                result["ai_summary_status"] = "unavailable"
     logger.info("github_delivery_enqueued event=%s action=%s delivery=%s", x_github_event, action, x_github_delivery)
     return result
 
