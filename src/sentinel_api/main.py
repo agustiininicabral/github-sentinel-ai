@@ -3,7 +3,6 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 
 from .ai import summarize_risk
@@ -95,7 +94,7 @@ async def github_webhook(
                 )
                 if summary:
                     result["ai_summary"] = summary
-            except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+            except Exception:
                 logger.exception("ai_advisory_failed delivery=%s", x_github_delivery)
                 result["ai_summary_status"] = "unavailable"
     logger.info("github_delivery_enqueued event=%s action=%s delivery=%s", x_github_event, action, x_github_delivery)
