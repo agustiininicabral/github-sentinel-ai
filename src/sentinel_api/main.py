@@ -42,7 +42,17 @@ async def github_webhook(
     x_github_delivery: str = Header(default="", alias="X-GitHub-Delivery"),
     x_hub_signature_256: str = Header(default="", alias="X-Hub-Signature-256"),
 ):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.max_webhook_bytes:
+                raise HTTPException(status_code=413, detail="Webhook payload too large")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header") from None
+
     raw_body = await request.body()
+    if len(raw_body) > settings.max_webhook_bytes:
+        raise HTTPException(status_code=413, detail="Webhook payload too large")
     if not verify_github_signature(settings.github_webhook_secret, raw_body, x_hub_signature_256):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     if not x_github_delivery or not x_github_event:
