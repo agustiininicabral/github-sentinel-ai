@@ -20,7 +20,8 @@ def test_n8n_workflow_export_is_valid_and_connected():
     assert "delivery_id" in code["parameters"]["jsCode"]
     analyze = next(node for node in workflow["nodes"] if node["name"] == "Analyze Event")
     assert analyze["parameters"]["url"].endswith("/integrations/n8n/analyze")
-    assert "payload" in analyze["parameters"]["jsonBody"]
+    assert "delivery_id" in analyze["parameters"]["jsonBody"]
+    assert "payload" not in analyze["parameters"]["jsonBody"]
     assert workflow["active"] is False
 
 
