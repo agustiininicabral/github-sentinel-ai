@@ -7,11 +7,11 @@ Enterprise-oriented, local-first GitHub DevOps, QA and code-intelligence automat
 ## Features
 - FastAPI service with health and readiness endpoints.
 - GitHub webhook signature verification against the exact raw request body.
-- Delivery-id idempotency ledger (SQLite by default).
-- Deterministic PR risk scoring with explainable factors.
-- Optional OpenAI-compatible chat endpoint for advisory summaries; deterministic mode works without AI credentials.
-- Structured logs, environment-based configuration, and automated tests.
-- GitHub Actions CI for Python 3.12.
+- Bounded streaming request-body handling and delivery-id idempotency ledger (SQLite by default).
+- Deterministic PR risk scoring with explainable factors, using GitHub's actual nested webhook schema.
+- Optional OpenAI-compatible AI advisory adapter; local-compatible endpoints are supported and deterministic mode works without AI credentials.
+- Environment-based configuration, structured logs and automated tests.
+- GitHub Actions CI for Python 3.12 with coverage reporting.
 
 ## Quick start (Windows PowerShell)
 ```powershell
@@ -25,7 +25,7 @@ uvicorn sentinel_api.main:app --reload
 Open http://127.0.0.1:8000/docs and http://127.0.0.1:8000/health.
 
 ## Configuration
-See [.env.example](.env.example). Set a long random `GITHUB_WEBHOOK_SECRET` before exposing the webhook. Keep secrets outside Git. `AI_ENABLED=false` is the safe default.
+See [.env.example](.env.example). Set a high-entropy `GITHUB_WEBHOOK_SECRET` before accepting webhooks. `MAX_WEBHOOK_BYTES` defaults to 1 MiB. Keep secrets outside Git. `AI_ENABLED=false` is the safe default. To use a local OpenAI-compatible server, set `AI_BASE_URL` and `AI_MODEL`; the adapter is opt-in and advisory only.
 
 ## GitHub webhook
 Configure a repository webhook with:
@@ -38,15 +38,16 @@ The endpoint verifies `X-Hub-Signature-256` over the original raw bytes and uses
 
 ## Tests
 ```powershell
-pytest
+pytest --cov=sentinel_api --cov-report=term-missing
+ruff check src tests
 ```
 
 ## Architecture
 ```text
-GitHub webhook -> FastAPI /webhooks/github -> HMAC verification -> idempotency ledger
-                                                              -> PR risk engine
-                                                              -> JSON response / future n8n workflows
-                                                              -> optional AI advisory adapter
+GitHub webhook -> bounded FastAPI ingress -> HMAC verification -> idempotency ledger
+                                                               -> PR risk engine
+                                                               -> JSON acknowledgement
+                                                               -> optional AI advisory adapter
 ```
 
 ## Security boundaries
@@ -54,11 +55,12 @@ GitHub webhook -> FastAPI /webhooks/github -> HMAC verification -> idempotency l
 - AI output is advisory and must never be treated as authorization.
 - Webhook signature is checked before JSON parsing or persistence.
 - SQLite is suitable for local development/single-instance use; use PostgreSQL before multi-instance production.
+- n8n must not parse and re-serialize the signed GitHub body before signature verification.
 - Never commit `.env`, tokens, webhook secrets, or model credentials.
 
 ## Roadmap
 1. PostgreSQL repository and migrations.
-2. n8n workflows with raw-body-preserving ingress and human approval gates.
+2. n8n workflows with a verified raw-body ingress and human approval gates.
 3. GitHub App authentication with least-privilege permissions.
 4. PR diff analysis, test selection, security findings and quality trends.
 5. AI-assisted review with strict data minimization and deterministic fallbacks.
