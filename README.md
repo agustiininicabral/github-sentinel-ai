@@ -22,7 +22,7 @@ py -3.12 -m venv .venv
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
 Copy-Item .env.example .env
-uvicorn sentinel_api.main:app --reload
+python -m sentinel_api
 ```
 Open http://127.0.0.1:8000/docs and http://127.0.0.1:8000/health.
 
