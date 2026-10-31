@@ -89,3 +89,11 @@ async def test_webhook_rejects_non_object_json(monkeypatch, tmp_path):
             "X-GitHub-Event": "ping", "X-GitHub-Delivery": "delivery-array",
             "X-Hub-Signature-256": signed(body, "test-secret")})
     assert response.status_code == 400
+
+@pytest.mark.asyncio
+async def test_n8n_integration_is_disabled_without_token(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.settings, "integration_token", "")
+    monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "disabled.db"))
+    async for client in request_app():
+        response = await client.get("/integrations/n8n/events")
+    assert response.status_code == 503
