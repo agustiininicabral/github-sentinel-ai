@@ -17,7 +17,7 @@ The API acts as the trusted GitHub webhook ingress. GitHub's signature is verifi
 - Polls `GET /integrations/n8n/events?limit=25`.
 - Splits the pending event batch into individual items.
 - Normalizes event metadata while retaining the original verified payload for analysis.
-- Calls `POST /integrations/n8n/analyze` with the delivery ID and payload. Sentinel returns deterministic PR risk and, when enabled, an optional AI advisory.
+- Calls `POST /integrations/n8n/analyze` with the delivery ID. Sentinel loads the event payload from its own outbox and returns deterministic PR risk plus an optional AI advisory.
 - Acknowledges the delivery with `POST /integrations/n8n/events/{delivery_id}/ack` only after the analysis request completes.
 
 The GitHub webhook response never waits for the AI provider. AI failures are reported as `ai_summary_status: unavailable`; deterministic risk remains available and the workflow can continue. The outbox is durable: a failed or unacknowledged item remains pending and is returned again. Consumers must therefore be idempotent. The acknowledgement endpoint is protected by the integration bearer token.
@@ -25,7 +25,7 @@ The GitHub webhook response never waits for the AI provider. AI failures are rep
 ## API contract
 
 - `GET /integrations/n8n/events?limit=25` — requires `Authorization: Bearer ...`; limit is 1–100.
-- `POST /integrations/n8n/analyze` — requires the same token; body contains `delivery_id` and the verified GitHub `payload`.
+- `POST /integrations/n8n/analyze` — requires the same token; body contains only `delivery_id` for a pending event.
 - `POST /integrations/n8n/events/{delivery_id}/ack` — requires the same token; acknowledges one pending delivery.
 - If `SENTINEL_INTEGRATION_TOKEN` is unset, the integration endpoints return 503.
 - Never expose the integration endpoints without HTTPS and a strong token.
