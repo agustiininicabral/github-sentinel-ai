@@ -7,15 +7,20 @@ def test_low_risk_default():
     assert result.score == 0
 
 
-def test_high_risk_is_capped_and_explained():
+def test_high_risk_uses_real_github_nested_pr_fields():
     result = assess_pull_request({
-        "pull_request": {"title": "Security auth migration", "body": "production breaking change",
-                         "labels": [{"name": "urgent"}]},
-        "changed_files": 50, "additions": 900, "deletions": 500,
+        "pull_request": {
+            "title": "Security auth migration",
+            "body": "production breaking change",
+            "labels": [{"name": "urgent"}],
+            "changed_files": 50,
+            "additions": 900,
+            "deletions": 500,
+        }
     })
     assert result.score == 95
     assert result.level == "high"
-    assert len(result.factors) >= 4
+    assert len(result.factors) == 6
 
 
 def test_untrusted_shapes_do_not_crash():
