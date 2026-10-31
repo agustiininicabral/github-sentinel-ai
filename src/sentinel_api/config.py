@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
     port: int = 8000
     database_path: str = "./data/sentinel.db"
     github_webhook_secret: str = ""
+    max_webhook_bytes: int = Field(default=1_048_576, ge=1_024, le=10_485_760)
     ai_enabled: bool = False
     ai_base_url: str = ""
     ai_api_key: str = ""
