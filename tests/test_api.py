@@ -97,3 +97,24 @@ async def test_n8n_integration_is_disabled_without_token(monkeypatch, tmp_path):
     async for client in request_app():
         response = await client.get("/integrations/n8n/events")
     assert response.status_code == 503
+
+@pytest.mark.asyncio
+async def test_webhook_includes_optional_ai_advisory(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "integration_token", "")
+    monkeypatch.setattr(main.settings, "ai_enabled", True)
+    monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "ai.db"))
+
+    async def fake_summary(settings, assessment, title):
+        assert assessment["score"] == 25
+        assert title == "Auth update"
+        return "Review the authentication change carefully."
+
+    monkeypatch.setattr(main, "summarize_risk", fake_summary)
+    body = json.dumps({"action": "opened", "pull_request": {"title": "Auth update"}}).encode()
+    headers = {"X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "ai-delivery",
+               "X-Hub-Signature-256": signed(body, "test-secret")}
+    async for client in request_app():
+        response = await client.post("/webhooks/github", content=body, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["ai_summary"] == "Review the authentication change carefully."
