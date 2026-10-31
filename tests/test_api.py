@@ -45,6 +45,8 @@ async def test_webhook_signature_risk_deduplication_and_outbox(monkeypatch, tmp_
         ack = await client.post("/integrations/n8n/events/delivery-42/ack",
                                 headers={"Authorization": "Bearer n8n-secret"})
         empty = await client.get("/integrations/n8n/events", headers={"Authorization": "Bearer n8n-secret"})
+        ack_again = await client.post("/integrations/n8n/events/delivery-42/ack",
+                                      headers={"Authorization": "Bearer n8n-secret"})
     assert first.status_code == 200
     assert first.json()["risk"]["level"] == "medium"
     assert first.json()["risk"]["score"] == 45
@@ -54,6 +56,7 @@ async def test_webhook_signature_risk_deduplication_and_outbox(monkeypatch, tmp_
     assert pending.json()["events"][0]["payload"]["action"] == "opened"
     assert ack.json()["status"] == "processed"
     assert empty.json()["count"] == 0
+    assert ack_again.status_code == 404
 
 
 @pytest.mark.asyncio
