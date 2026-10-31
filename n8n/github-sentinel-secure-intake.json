@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return items.map(({ json }) => {\\n  const event = json;\\n  const pr = event.payload?.pull_request ?? {};\\n  return { json: {\\n    delivery_id: event.delivery_id,\\n    event: event.event,\\n    action: event.action,\\n    received_at: event.received_at,\\n    repository: event.payload?.repository?.full_name ?? null,\\n    pull_request: {\\n      number: pr.number ?? null,\\n      title: pr.title ?? null,\\n      state: pr.state ?? null,\\n      changed_files: pr.changed_files ?? null,\\n      additions: pr.additions ?? null,\\n      deletions: pr.deletions ?? null,\\n      html_url: pr.html_url ?? null\\n    }\\n  }};\\n});"
+        "jsCode": "return items.map(({ json }) => {\n  const event = json;\n  const pr = event.payload?.pull_request ?? {};\n  return { json: {\n    delivery_id: event.delivery_id,\n    event: event.event,\n    action: event.action,\n    received_at: event.received_at,\n    repository: event.payload?.repository?.full_name ?? null,\n    pull_request: {\n      number: pr.number ?? null,\n      title: pr.title ?? null,\n      state: pr.state ?? null,\n      changed_files: pr.changed_files ?? null,\n      additions: pr.additions ?? null,\n      deletions: pr.deletions ?? null,\n      html_url: pr.html_url ?? null\n    }\n  }};\n});"
       },
       "id": "0c2a0a40-1a1b-4d5e-8b3e-2b21d4c7a004",
       "name": "Normalize Event",
