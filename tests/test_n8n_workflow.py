@@ -15,6 +15,20 @@ def test_n8n_workflow_export_is_valid_and_connected():
         "Acknowledge Processed Event",
     }
     assert set(workflow["connections"]) == names - {"Acknowledge Processed Event"}
+    expected_chain = [
+        ("Poll Sentinel", "Fetch Pending Events"),
+        ("Fetch Pending Events", "Split Events"),
+        ("Split Events", "Normalize Event"),
+        ("Normalize Event", "Analyze Event"),
+        ("Analyze Event", "Acknowledge Processed Event"),
+    ]
+    for source, target in expected_chain:
+        targets = [
+            edge["node"]
+            for output in workflow["connections"][source]["main"]
+            for edge in output
+        ]
+        assert targets == [target]
     code = next(node for node in workflow["nodes"] if node["name"] == "Normalize Event")
     assert "\\n" not in code["parameters"]["jsCode"]
     assert "delivery_id" in code["parameters"]["jsCode"]
