@@ -21,11 +21,13 @@ class DeliveryLedger:
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(
+        connection = sqlite3.connect(
             self.database_path,
             timeout=10,
             uri=self.database_path.startswith("file:"),
         )
+        connection.row_factory = sqlite3.Row
+        return connection
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
