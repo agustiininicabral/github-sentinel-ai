@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
         app.state.ledger.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 
 
 def require_integration_token(authorization: str) -> None:
@@ -94,21 +95,20 @@ async def github_webhook(
     if not is_new:
         return {"status": "duplicate", "delivery_id": x_github_delivery}
 
-    result = {"status": "accepted", "delivery_id": x_github_delivery, "event": x_github_event, "action": action}
+    result: dict[str, Any] = {
+        "status": "accepted",
+        "delivery_id": x_github_delivery,
+        "event": x_github_event,
+        "action": action,
+    }
     if x_github_event == "pull_request" and isinstance(payload.get("pull_request"), dict):
-        assessment = assess_pull_request(payload).to_dict()
-        result["risk"] = assessment
-        if settings.ai_enabled:
-            try:
-                summary = await summarize_risk(
-                    settings, assessment, str(payload["pull_request"].get("title") or "")
-                )
-                if summary:
-                    result["ai_summary"] = summary
-            except Exception:
-                logger.exception("ai_advisory_failed delivery=%s", x_github_delivery)
-                result["ai_summary_status"] = "unavailable"
-    logger.info("github_delivery_enqueued event=%s action=%s delivery=%s", x_github_event, action, x_github_delivery)
+        result["risk"] = assess_pull_request(payload).to_dict()
+    logger.info(
+        "github_delivery_enqueued event=%s action=%s delivery=%s",
+        x_github_event,
+        action,
+        x_github_delivery,
+    )
     return result
 
 
@@ -121,6 +121,38 @@ async def n8n_pending_events(
     require_integration_token(authorization)
     events = request.app.state.ledger.pending(limit)
     return {"events": events, "count": len(events)}
+
+
+@app.post("/integrations/n8n/analyze")
+async def n8n_analyze_event(
+    analysis_request: dict[str, Any],
+    authorization: str = Header(default="", alias="Authorization"),
+):
+    """Run optional AI advisory outside the GitHub webhook response path."""
+    require_integration_token(authorization)
+    delivery_id = analysis_request.get("delivery_id")
+    payload = analysis_request.get("payload")
+    if not isinstance(delivery_id, str) or not delivery_id.strip():
+        raise HTTPException(status_code=400, detail="delivery_id is required")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+
+    assessment = assess_pull_request(payload).to_dict()
+    response: dict[str, Any] = {"delivery_id": delivery_id, "risk": assessment}
+    pr = payload.get("pull_request")
+    if settings.ai_enabled and isinstance(pr, dict):
+        try:
+            summary = await summarize_risk(
+                settings, assessment, str(pr.get("title") or "")
+            )
+            if summary:
+                response["ai_summary"] = summary
+            else:
+                response["ai_summary_status"] = "unavailable"
+        except Exception:
+            logger.exception("ai_advisory_failed delivery=%s", delivery_id)
+            response["ai_summary_status"] = "unavailable"
+    return response
 
 
 @app.post("/integrations/n8n/events/{delivery_id}/ack")
