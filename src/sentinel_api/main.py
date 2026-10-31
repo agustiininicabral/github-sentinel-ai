@@ -19,7 +19,10 @@ logger = logging.getLogger("sentinel")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.ledger = DeliveryLedger(settings.database_path)
-    yield
+    try:
+        yield
+    finally:
+        app.state.ledger.close()
 
 
 app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
@@ -40,8 +43,16 @@ async def health():
 
 @app.get("/ready")
 async def ready(request: Request):
-    if not hasattr(request.app.state, "ledger"):
+    ledger = getattr(request.app.state, "ledger", None)
+    if ledger is None:
         raise HTTPException(status_code=503, detail="Ledger is not initialized")
+    try:
+        if not ledger.ping():
+            raise HTTPException(status_code=503, detail="Ledger is unavailable")
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(status_code=503, detail="Ledger is unavailable") from exc
     return {"status": "ready"}
 
 
