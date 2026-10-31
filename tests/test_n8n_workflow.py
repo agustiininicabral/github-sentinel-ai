@@ -32,6 +32,8 @@ def test_n8n_workflow_export_is_valid_and_connected():
     code = next(node for node in workflow["nodes"] if node["name"] == "Normalize Event")
     assert "\\n" not in code["parameters"]["jsCode"]
     assert "delivery_id" in code["parameters"]["jsCode"]
+    assert "$input.all()" in code["parameters"]["jsCode"]
+    assert "items.map" not in code["parameters"]["jsCode"]
     analyze = next(node for node in workflow["nodes"] if node["name"] == "Analyze Event")
     assert analyze["parameters"]["url"].endswith("/integrations/n8n/analyze")
     assert "delivery_id" in analyze["parameters"]["jsonBody"]
