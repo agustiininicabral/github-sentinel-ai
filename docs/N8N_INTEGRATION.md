@@ -9,25 +9,27 @@ The API acts as the trusted GitHub webhook ingress. GitHub's signature is verifi
 3. Make the Sentinel API reachable from the n8n host. If n8n runs in a container, `127.0.0.1` inside n8n refers to that container, not the Windows host; use a reachable host address and firewall rules.
 4. In n8n, create an **HTTP Header Auth** credential named `Sentinel API Bearer`. Set the header name to `Authorization` and the value to `Bearer YOUR_SENTINEL_INTEGRATION_TOKEN`. Never place the token directly in a workflow export.
 5. Import [github-sentinel-secure-intake.json](../n8n/github-sentinel-secure-intake.json).
-6. Select the credential on both HTTP Request nodes. If n8n assigns a new credential ID, reselect it on each node.
+6. Select the credential on all three HTTP Request nodes. If n8n assigns a new credential ID, reselect it on each node.
 7. Test the workflow manually before activating the one-minute schedule.
 
 ## Workflow behavior
 
 - Polls `GET /integrations/n8n/events?limit=25`.
 - Splits the pending event batch into individual items.
-- Normalizes the repository and pull-request metadata.
-- Acknowledges each delivery with `POST /integrations/n8n/events/{delivery_id}/ack` only after normalization succeeds.
+- Normalizes event metadata while retaining the original verified payload for analysis.
+- Calls `POST /integrations/n8n/analyze` with the delivery ID and payload. Sentinel returns deterministic PR risk and, when enabled, an optional AI advisory.
+- Acknowledges the delivery with `POST /integrations/n8n/events/{delivery_id}/ack` only after the analysis request completes.
 
-The outbox is durable: a failed or unacknowledged item remains pending and is returned again. Consumers must therefore be idempotent. The acknowledgement endpoint is protected by the integration bearer token.
+The GitHub webhook response never waits for the AI provider. AI failures are reported as `ai_summary_status: unavailable`; deterministic risk remains available and the workflow can continue. The outbox is durable: a failed or unacknowledged item remains pending and is returned again. Consumers must therefore be idempotent. The acknowledgement endpoint is protected by the integration bearer token.
 
 ## API contract
 
 - `GET /integrations/n8n/events?limit=25` — requires `Authorization: Bearer ...`; limit is 1–100.
+- `POST /integrations/n8n/analyze` — requires the same token; body contains `delivery_id` and the verified GitHub `payload`.
 - `POST /integrations/n8n/events/{delivery_id}/ack` — requires the same token; acknowledges one pending delivery.
 - If `SENTINEL_INTEGRATION_TOKEN` is unset, the integration endpoints return 503.
 - Never expose the integration endpoints without HTTPS and a strong token.
 
 ## Important deployment note
 
-The included workflow uses `http://127.0.0.1:8000` as a local default. This works only when n8n and Sentinel share the same network namespace. Change the URL in both HTTP Request nodes when they run on separate machines or in separate containers. Docker is not required by Sentinel itself; n8n's deployment method is independent.
+The included workflow uses `http://127.0.0.1:8000` as a local default. This works only when n8n and Sentinel share the same network namespace. Change the URL in all three HTTP Request nodes when they run on separate machines or in separate containers. Docker is not required by Sentinel itself; n8n's deployment method is independent.
