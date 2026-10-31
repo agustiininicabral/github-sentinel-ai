@@ -11,7 +11,10 @@ def test_delivery_is_processed_once_and_acknowledged(tmp_path):
     pending = ledger.pending()
     assert len(pending) == 1
     assert pending[0]["payload"] == payload
+    assert ledger.get_pending("delivery-1")["payload"] == payload
+    assert ledger.get_pending("missing") is None
     assert ledger.acknowledge("delivery-1")
+    assert ledger.get_pending("delivery-1") is None
     assert not ledger.acknowledge("delivery-1")
     assert ledger.pending() == []
 
