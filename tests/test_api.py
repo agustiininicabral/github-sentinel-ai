@@ -21,15 +21,17 @@ def test_health_and_ready(monkeypatch, tmp_path):
 def test_webhook_signature_risk_and_deduplication(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
     monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "api.db"))
-    body = json.dumps({"action": "opened", "pull_request": {"title": "Auth update", "labels": []},
-                       "changed_files": 2}).encode()
+    body = json.dumps({"action": "opened", "pull_request": {
+        "title": "Auth update", "labels": [], "changed_files": 25
+    }}).encode()
     headers = {"X-GitHub-Event": "pull_request", "X-GitHub-Delivery": "delivery-42",
                "X-Hub-Signature-256": signed(body, "test-secret")}
     with TestClient(main.app) as client:
         first = client.post("/webhooks/github", content=body, headers=headers)
         second = client.post("/webhooks/github", content=body, headers=headers)
     assert first.status_code == 200
-    assert first.json()["risk"]["level"] == "low"
+    assert first.json()["risk"]["level"] == "medium"
+    assert first.json()["risk"]["score"] == 45
     assert second.json()["status"] == "duplicate"
 
 
@@ -41,3 +43,22 @@ def test_webhook_rejects_invalid_signature(monkeypatch, tmp_path):
             "X-GitHub-Event": "ping", "X-GitHub-Delivery": "delivery-bad",
             "X-Hub-Signature-256": "sha256=" + "0" * 64})
     assert response.status_code == 401
+
+
+def test_webhook_rejects_oversized_payload(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "large.db"))
+    monkeypatch.setattr(main.settings, "max_webhook_bytes", 1024)
+    with TestClient(main.app) as client:
+        response = client.post("/webhooks/github", content=b"x" * 1025)
+    assert response.status_code == 413
+
+
+def test_webhook_rejects_non_object_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.settings, "github_webhook_secret", "test-secret")
+    monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "shape.db"))
+    body = b"[]"
+    with TestClient(main.app) as client:
+        response = client.post("/webhooks/github", content=body, headers={
+            "X-GitHub-Event": "ping", "X-GitHub-Delivery": "delivery-array",
+            "X-Hub-Signature-256": signed(body, "test-secret")})
+    assert response.status_code == 400
